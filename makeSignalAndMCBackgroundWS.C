@@ -139,12 +139,13 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
   
   //finput->cd(lRegions.c_str());
   
-  TFile *finputJES = TFile::Open("../vbf_shape_jes_uncs_smooth.root");
-  
+  TFile *finputJES = TFile::Open("../vbf_shape_jes_uncs.root");
+  if (!finputJES) return ;
+
   const unsigned nP = 10;
   //!! Mind that order is the same as in PROCESS enum above !!
   std::string lProcs[nP]    = {"VBFHtoInv","GluGluHtoInv","WH","qqZH","ggZH","ttH","TOP","VV","DY","EWKZll"};
-  std::string lJESLabel[nP] = {"VBF","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","EWKZ2Jets_ZToNuNu"};  // for now, use the Z->vv sample calculation for ggH, WH, qqZH, ggZH, ttH, VV and Top
+  std::string lJESLabel[nP] = {"VBF_HToInvisible_","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","ZJetsToNuNu","EWKZJetsToNuNu"};  // for now, use the Z->vv sample calculation for ggH, WH, qqZH, ggZH, ttH, VV and Top
   
   const unsigned nN = doEMSF ? 17 : 16;
   std::string lSysts[17] = {"bjet_veto","pileup","tau_veto",
@@ -274,11 +275,18 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
       std::cout << finputJES->GetName() <<std::endl;
       for (unsigned iJ(0); iJ < nJ; ++iJ){
 	
-	
-	TH1F *hSUp   = (TH1F*)finputJES->Get(Form("%s%s_%sUp",lJESLabel[iP].c_str(),year.c_str(),lJes[iJ].c_str()));
-	TH1F *hSDown = (TH1F*)finputJES->Get(Form("%s%s_%sDown",lJESLabel[iP].c_str(),year.c_str(),lJes[iJ].c_str()));
+	finputJES->cd();
+	TH1D *hSUp   = (TH1D*)finputJES->Get(Form("%s%s_%sUp",lJESLabel[iP].c_str(),year.c_str(),lJes[iJ].c_str()));
+
+	if (!hSUp) {
+	  std::cout << " -- histo " << Form("%s%s_%sUp",lJESLabel[iP].c_str(),year.c_str(),lJes[iJ].c_str()) << " not found " << std::endl;
+	  return;
+	}
+
+	TH1D *hSDown = (TH1D*)finputJES->Get(Form("%s%s_%sDown",lJESLabel[iP].c_str(),year.c_str(),lJes[iJ].c_str()));
 	std::cout << " Getting JES files for " << Thist->GetName() << std::endl;
-	
+	std::cout << " JES histo name: " << hSUp->GetName() << std::endl;	
+
 	TH1F *hSUpnew = (TH1F*)Thist->Clone(); hSUpnew->SetName(Form("%s%s_%sUp",lRegions[iR].c_str(),lProcs[iP].c_str(),lJes[iJ].c_str()));
 	TH1F *hSDownnew = (TH1F*)Thist->Clone(); hSDownnew->SetName(Form("%s%s_%sDown",lRegions[iR].c_str(),lProcs[iP].c_str(),lJes[iJ].c_str()));
 	std::cout << " Filling Up/Down JES for " << Thist->GetName() << std::endl;

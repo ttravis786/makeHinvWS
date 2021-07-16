@@ -336,7 +336,8 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
   //JES using JME reduced scheme correlated across years, JER fully uncorrelated
     
   TFile *finputJES = TFile::Open("../vbf_jes_jer_tf_uncs.root");
-    
+  if (!finputJES) return 1;
+
   const unsigned nJ = 11;
   std::string lJes[nJ] = {
     "jesAbsolute"
@@ -514,7 +515,7 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
 	lFormula << "*TMath::Power(" << WZratioSyst_muR << ",@0)*TMath::Power(" << WZratioSyst_muF << ",@1)*TMath::Power(" << WZratioSyst_pdf << ",@2)*TMath::Power(" << ratiostat << ",@3)*TMath::Power(" << ratio_EWK_corr_on_Strong_proc << ",@4)";
       }
 
-      double jerWZSyst = ((TH1F*)finputJES->Get(Form("znunu_over_wlnu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),"jer")))->GetBinContent(1);
+      double jerWZSyst = ((TH1D*)finputJES->Get(Form("znunu_over_wlnu%s_%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),"jer",year.c_str())))->GetBinContent(1);
       lFormula << "*TMath::Power(" << 1./jerWZSyst << ",@5)";
       //add also lepton veto uncertainties
       //lFormula << "*TMath::Power(" << eleRecoVetoWZ << ",@7)";
@@ -528,7 +529,7 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
 
       int enumerate_Formula = 8;
       for (unsigned iJ(0); iJ < nJ; ++iJ){
-	double jesWZSyst = ((TH1F*)finputJES->Get(Form("znunu_over_wlnu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),lJes[iJ].c_str())))->GetBinContent(1);
+	double jesWZSyst = ((TH1D*)finputJES->Get(Form("znunu_over_wlnu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),lJes[iJ].c_str())))->GetBinContent(1);
 	lFormula << "*TMath::Power(" << 1./jesWZSyst << Form(",@%d)",enumerate_Formula);
 	enumerate_Formula++;
 	variables.add(*(jes[iJ]));
@@ -585,11 +586,11 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
 
 	lFormula << "*TMath::Power(";
 	if (iR<3) {
-	  double jerWWSyst = ((TH1F*)finputJES->Get(Form("wlnu_over_wmunu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),"jer")))->GetBinContent(1);
+	  double jerWWSyst = ((TH1D*)finputJES->Get(Form("wlnu_over_wmunu%s_%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),"jer",year.c_str())))->GetBinContent(1);
 	  lFormula << 1./jerWWSyst;
 	}
 	else {
-	  double jerZZSyst = ((TH1F*)finputJES->Get(Form("znunu_over_zmumu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),"jer")))->GetBinContent(1);
+	  double jerZZSyst = ((TH1D*)finputJES->Get(Form("znunu_over_zmumu%s_%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),"jer",year.c_str())))->GetBinContent(1);
 	  lFormula << 1./jerZZSyst;
 	}
 	lFormula << ",@0)";
@@ -605,8 +606,8 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
 	for (unsigned iJ(0); iJ < nJ; ++iJ){
 	  double jesSyst = 1. ;
 	  lFormula << "*TMath::Power(";
-	  if (iR<3) jesSyst = ((TH1F*)finputJES->Get(Form("wlnu_over_wmunu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),lJes[iJ].c_str())))->GetBinContent(1);
-	  else jesSyst = ((TH1F*)finputJES->Get(Form("znunu_over_zmumu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),lJes[iJ].c_str())))->GetBinContent(1);
+	  if (iR<3) jesSyst = ((TH1D*)finputJES->Get(Form("wlnu_over_wmunu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),lJes[iJ].c_str())))->GetBinContent(1);
+	  else jesSyst = ((TH1D*)finputJES->Get(Form("znunu_over_zmumu%s_%s_%sUp",shortYear.c_str(),lTypeLC[iT].c_str(),lJes[iJ].c_str())))->GetBinContent(1);
 	  lFormula << 1./jesSyst;
 	  lFormula << Form(",@%d)",iSyst);
 	  nuisances.add(*(jes[iJ]));
