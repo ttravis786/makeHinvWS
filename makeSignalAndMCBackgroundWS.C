@@ -173,7 +173,7 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
 
 
   std::string lSystsCMS[17] = {
-    "CMS_eff_bveto","CMS_pileup","CMS_eff_tauveto",
+    "CMS_fake_b","CMS_pileup","CMS_eff_tauveto",
     "CMS_eff_eVeto_idiso_veto","CMS_eff_eVeto_reco_veto",
     "CMS_eff_muLoose_id_veto","CMS_eff_muLoose_iso_veto",
     "CMS_eff_eTight_idiso","CMS_eff_eTight_reco",
@@ -192,7 +192,7 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
 			    1,1,
 			    1,1
   };
-  const bool corrYear[17] = {1,1,0,
+  const bool corrYear[17] = {0,1,0,
 			     0,1,
 			     1,1,
 			     0,1,
@@ -237,6 +237,9 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
     std::string channel=""; 
     if ( doSamSetup && iR>0 ) channel="VBF";
     for (unsigned iP(0); iP<nP; ++iP){
+      if (iP==PROCESS::TOP || iP==PROCESS::ttH) lSystsCMS[0] = "CMS_eff_b_"+year;
+      else lSystsCMS[0] = "CMS_fake_b_"+year; 
+
       if (iR>0 and iP<PROCESS::TOP) continue;
       std::cout << " central histogram -- " << Form("%s%s/%s",lRegions[iR].c_str(),channel.c_str(),lProcs[iP].c_str()) << std::endl; 
       TH1F* Thist = (TH1F*)finput->Get(Form("%s%s/%s",lRegions[iR].c_str(),channel.c_str(),lProcs[iP].c_str()));

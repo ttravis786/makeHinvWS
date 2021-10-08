@@ -91,7 +91,7 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
   };
 
   //following CMS naming conventions.
-  std::string lNuisCMS[17] = {"CMS_eff_bveto","CMS_pileup","CMS_eff_tauveto",
+  std::string lNuisCMS[17] = {"CMS_fake_b","CMS_pileup","CMS_eff_tauveto",
 			      "CMS_eff_eVeto_idiso_veto","CMS_eff_muLoose_id_veto","CMS_eff_muLoose_iso_veto",
 			      "CMS_eff_eTight_idiso","CMS_eff_muTight_id","CMS_eff_muTight_iso",
 			      "CMS_eff_eVeto_idiso","CMS_eff_muLoose_id","CMS_eff_muLoose_iso",
@@ -106,7 +106,7 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
 			    1,1,1,
 			    1,1
   };
-  const bool corrYear[17] = {1,1,0,
+  const bool corrYear[17] = {0,1,0,
 			     0,1,1,
 			     0,1,1,
 			     0,1,1,
