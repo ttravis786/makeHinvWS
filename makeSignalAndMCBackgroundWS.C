@@ -120,7 +120,7 @@ void makePlot(TDirectory *where, std::string name, std::string sys, TH1F *hC, TH
 void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR"){
 
 
-  const bool doSamSetup = true;
+  const bool doSamSetup = false;
   const bool doEMSF = false;
   
   const bool is2017 = year=="2017";
@@ -210,9 +210,10 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
   const unsigned nR = 5;
   std::string lRegions[nR] = {"SR","Zee","Zmumu","Wenu","Wmunu"};
   
-  const unsigned nJ = 11;
+  const unsigned nJ = 12;
   std::string lJes[nJ] = {
-    "jesAbsolute"
+    "jer"
+    ,"jesAbsolute"
     , Form("jesAbsolute_%s",year.c_str())
     , "jesBBEC1"
     , Form("jesBBEC1_%s",year.c_str())
@@ -299,8 +300,15 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
 	  hSDownnew->SetBinContent(b,yv*hSDown->GetBinContent(hSDown->FindBin(xv)));
 	}
 	
-	RooDataHist *histSU = new RooDataHist((lProcs[iP]+"_hist_"+lRegions[iR]+"_CMS_scale_j_"+lJes[iJ]+"Up").c_str(),"proces",vars,hSUpnew);
-	RooDataHist *histSD = new RooDataHist((lProcs[iP]+"_hist_"+lRegions[iR]+"_CMS_scale_j_"+lJes[iJ]+"Down").c_str(),"proces",vars,hSDownnew);
+	RooDataHist *histSU = 0;
+	RooDataHist *histSD = 0;
+	if (iJ==0) {
+	  histSU = new RooDataHist((lProcs[iP]+"_hist_"+lRegions[iR]+"_CMS_res_j_"+year+"Up").c_str(),"proces",vars,hSUpnew);
+	  histSD = new RooDataHist((lProcs[iP]+"_hist_"+lRegions[iR]+"_CMS_res_j_"+year+"Down").c_str(),"proces",vars,hSDownnew);
+	} else {
+	  histSU = new RooDataHist((lProcs[iP]+"_hist_"+lRegions[iR]+"_CMS_scale_j_"+lJes[iJ]+"Up").c_str(),"proces",vars,hSUpnew);
+	  histSD = new RooDataHist((lProcs[iP]+"_hist_"+lRegions[iR]+"_CMS_scale_j_"+lJes[iJ]+"Down").c_str(),"proces",vars,hSDownnew);
+	}
 	wspace.import(*histSU);
 	wspace.import(*histSD);
 	

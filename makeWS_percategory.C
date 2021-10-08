@@ -37,7 +37,7 @@ enum PROCESS{
 
 int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
   
-  const bool doSamSetup = true;
+  const bool doSamSetup = false;
   const bool doEMSF = false;
   
   const bool is2017 = year=="2017";
