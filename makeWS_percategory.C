@@ -17,6 +17,9 @@
 //#include "/afs/cern.ch/user/v/vmilosev/CMSSW_10_2_13/src/HiggsAnalysis/CombinedLimit/interface/RooParametricHist.h"
 #include "RooAddition.h"
 
+// Lots of datacards are here ls  /vols/cms/VBFHinv/
+// specific example:  20200514/test_VBF_2017_VTR_testing/output_Zmumu_sh
+
 enum PROCESS{
   data = 0,
   VBFH = 1,
@@ -74,13 +77,23 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
 			    "WH","qqZH","ggZH",
 			    "ttH"};
 
+// I will need to do this grouping.
+  std::string lProcsRun3[14] = {"data_obs","VBFHtoInv","GluGluHtoInv",
+			    "ZJETS","EWKZNUNU",
+			    "WJETS","EWKW",
+			    "DY","EWKZll","QCD",
+			    "WH","qqZH","ggZH",
+			    "ttH"};
+
+
   const unsigned nNLO = 4;
   std::string lNLOname[4] = {
     "fnlo_SF_QCD_corr_QCD_proc_muFUp",
     "fnlo_SF_QCD_corr_QCD_proc_muRUp",
     "fnlo_SF_QCD_corr_QCD_proc_pdfUp",
     "fnlo_SF_EWK_corrUp",
-  };
+  }; // The last one was binned in mjj.
+  
   const unsigned nN = doEMSF ? (is2017 ? 17 : 16) : (is2017 ? 17 : 15);
   std::string lNuis[17] = {"bjet_veto","pileup","tau_veto",
 			   "eventVetoVEleIdIso","eventVetoLMuId","eventVetoLMuIso",
@@ -88,6 +101,14 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
 			   "eventSelVEleIdIso","eventSelLMuId","eventSelLMuIso",
 			   "eventSelVEleReco", "eventSelTEleReco", "eventVetoVEleReco",
 			   "jetemSF","prefiring"
+  };
+// NEED TO FIX B TAGGING
+std::string lNuisRun3[17] = {"bjet_vetoNO","Minor","tau_veto",
+			   "electron_veto","muon_veto_id","muon_veto_iso",
+			   "electron_id","muon_id","muon_iso",
+			   "eventSelVEleIdIsoNO","eventSelLMuIdNO","eventSelLMuIsoNO",
+			   "eventSelVEleRecoNO", "eventSelTEleRecoNO", "eventVetoVEleRecoNO",
+			   "jetemSFNO","prefiringNO"
   };
 
   //following CMS naming conventions.
@@ -177,6 +198,7 @@ int makeWS_percategory(std::string year="2017", std::string cat="MTR"){
   std::string lInFileName[nR];
   for (unsigned iR(0); iR<nR; ++iR){     
     lInFileName[iR] = "out_VBF_ana_"+lRegions[iR]+"_"+year+"_v"+cat+"_"+year+"_200109/VBF_shapes.root";
+    std::cout << "\n" << "Input Name " << iR << ": " <<  lInFileName[iR] << "\n";
   }
 
   std::string lInFileName_Sam = "WJetsToLNu.root";

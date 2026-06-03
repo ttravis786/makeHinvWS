@@ -35,6 +35,20 @@ enum PROCESS{
   EWKZll = 9
 };
 
+enum PROCESSRun3{
+  VBFH   = 0,
+  ggH    = 1,
+  WH     = 2,
+  qqZH   = 3,
+  ggZH   = 4,
+  ttH    = 5,
+  TOP    = 6,
+  VV     = 7,
+  DY     = 8,
+  EWKZll = 9
+};
+
+
 double findmax(TH1F *h){
   
   double maxbv = h->GetBinContent(1);
@@ -117,7 +131,7 @@ void makePlot(TDirectory *where, std::string name, std::string sys, TH1F *hC, TH
 	//return can; 
  };
 
-void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR"){
+void makeSignalAndMCBackgroundWS(std::string year="Run3Summer22EE", std::string cat="MTR", bool classifier=true){
 
 
   const bool doSamSetup = false;
@@ -136,6 +150,8 @@ void makeSignalAndMCBackgroundWS(std::string year="2017", std::string cat="MTR")
   TFile *fOut = new TFile(lOutFileName.c_str(),"RECREATE");
   RooWorkspace wspace("wspace_signal","wspace_signal");
   RooArgList vars(lVarFit);
+
+  
   
   //finput->cd(lRegions.c_str());
   
