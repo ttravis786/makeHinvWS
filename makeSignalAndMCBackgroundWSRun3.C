@@ -124,11 +124,11 @@ void makeSignalAndMCBackgroundWSRun3(
     std::string varName, varTitle;
     double xmin, xmax;
     if (!classifier) {
-        varName  = "mjj_" + cat + "_" + year;
+        varName  = "mjj_" + cat;
         varTitle = "M_{jj} (GeV)";
         xmin = 200; xmax = 5000;
     } else {
-        varName  = "bdt_" + cat + "_" + year;
+        varName  = "bdt_" + cat;
         varTitle = "Signal Score";
         xmin = 0; xmax = 1;
     }

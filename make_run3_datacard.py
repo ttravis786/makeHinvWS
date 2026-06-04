@@ -230,7 +230,7 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
     cat, year, var = args.cat, args.year, args.var
     dc_path = os.path.join("datacards", label, f"card_{label}.txt")
     bins_short = ["ZEE", "ZMUMU", "WENU", "WMUNU", "SR"]
-    bin_labels = [f"{label}_{b}" for b in bins_short]
+    bin_labels = list(bins_short)
 
     # Use bare filenames — the datacard and workspace files live in the same
     # directory, so paths must be relative to that directory (where combine runs).
@@ -261,9 +261,8 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
 
     # ---- shapes lines -------------------------------------------------------
     # param_ws objects: labels from makeWS_percategoryRun3.C
-    lcat  = f"{cat}_"
-    lyear = f"{year}_"
-    cr_pref = f"{lcat}{lyear}"
+    lcat    = f"{cat}_"
+    cr_pref = lcat
 
     for b_short, b_label in zip(bins_short, bin_labels):
         alias = REGION_ALIASES[b_short]
@@ -335,7 +334,10 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
     bin_col    = "  ".join(f"{bp[1]:<30}" for bp in all_bin_proc)
     proc_col   = "  ".join(f"{bp[2]:<30}" for bp in all_bin_proc)
     idx_col    = "  ".join(f"{PROC_INDEX.get(bp[2], 99):<30}" for bp in all_bin_proc)
-    rate_col   = "  ".join(f"{-1:<30}" for bp in all_bin_proc)
+    rate_col   = "  ".join(
+        f"{(1 if not is_mc_shape(bp[2], bp[0]) and bp[2] not in DATA_DRIVEN else -1):<30}"
+        for bp in all_bin_proc
+    )
     lines.append("bin           " + bin_col)
     lines.append("process       " + proc_col)
     lines.append("process       " + idx_col)

@@ -18,12 +18,18 @@ plotting output.  All input ROOT files are read from:
 hinvisible_mtr_vtr/root_files/{year}/{region}_{cat}_VBF/{var}/VBF_shapes.root
 ```
 
-| # | Script | What it produces | Needs CMSSW? |
+| # | Script | What it produces | Environment |
 |---|--------|-----------------|-------------|
-| 1 | `derive_run3_nlo_ratios.py` | `run3_nlo_sf_{year}_{cat}_{var}.root` — per-bin NLO yield-variation histograms used by the parametric WS | No |
-| 2 | `makeSignalAndMCBackgroundWSRun3.C` | `signal_mc_bkgs_ws_{cat}_{year}_VBF{var}.root` — signal + small MC backgrounds as `RooDataHist` | No |
-| 3 | `makeWS_percategoryRun3.C` | `param_ws_{year}_{cat}_VBF{var}.root` — parametric W/Z transfer-factor workspace | **Yes** |
-| 4 | `make_run3_datacard.py` | `datacards/{cat}_{year}/card_{cat}_{year}.txt` — Combine datacard | No |
+| 1 | `derive_run3_nlo_ratios.py` | `run3_nlo_sf_{year}_{cat}_{var}.root` — per-bin NLO yield-variation histograms used by the parametric WS | pyRAT/LCG |
+| 2 | `makeSignalAndMCBackgroundWSRun3.C` | `signal_mc_bkgs_ws_{cat}_{year}_VBF{var}.root` — signal + small MC backgrounds as `RooDataHist` | CMSSW |
+| 3 | `makeWS_percategoryRun3.C` | `param_ws_{year}_{cat}_VBF{var}.root` — parametric W/Z transfer-factor workspace | CMSSW |
+| 4 | `make_run3_datacard.py` | `datacards/{cat}_{year}/card_{cat}_{year}.txt` — Combine datacard | pyRAT/LCG |
+
+Steps 1 & 4 need the pyRAT/LCG_104 environment (`setup_environment.sh`).
+Steps 2, 3, 5 & 6 need CMSSW (`CMSSW_14_1_0_pre4`).
+**These two environments are incompatible in the same shell** (conflicting
+`ROOTSYS`, `LD_LIBRARY_PATH`, `PYTHONPATH`).  Use `make_ws_and_datacard.sh`
+to handle the switching automatically.
 
 The QCD data-driven (`_qcdDD.root`) and HF-noise (`_noiseDD.root`) workspaces are
 produced automatically by the pyRAT plotting step (`hinvisible_mtr_vtr/region_analysis/main.py`)
@@ -33,41 +39,52 @@ and are copied into the datacard directory by `make_run3_datacard.py`.
 
 ## Quickstart — one command
 
-`run_pipeline.py` wraps all four production steps plus the Combine limit in a
-single script.  Run from the pyRAT root with CMSSW already sourced:
+`make_ws_and_datacard.sh` runs the full pipeline with automatic environment
+switching.  **No pre-activation of CMSSW or pyRAT is required** — each step
+spawns a fresh subprocess via `env -i` so the two incompatible environments
+never coexist in the same shell.
 
 ```bash
-# Source CMSSW first (needed for param_ws + Combine steps)
-cd /vols/cms/tt1020/Combine/CMSSW_14_1_0_pre4 && cmsenv
 cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT
 
-# Full pipeline — both categories, blind expected limit
-python3 makeHinvWS/run_pipeline.py \
-    --cats VTR MTR \
-    --campaigns Run3Summer22 Run3Summer22EE Run3Summer23 Run3Summer23BPix \
-    --var Mjj
+# Full pipeline — VTR only, blind expected limit
+bash makeHinvWS/make_ws_and_datacard.sh
 
-# Workspaces + datacard only (no Combine)
-python3 makeHinvWS/run_pipeline.py \
-    --cats VTR \
-    --campaigns Run3Summer22_to_Run3Summer23BPix \
-    --steps derive_nlo param_ws signal_ws datacard
+# Both categories
+CATS="VTR MTR" bash makeHinvWS/make_ws_and_datacard.sh
 
-# Re-run limits only (workspaces already built)
-python3 makeHinvWS/run_pipeline.py \
-    --cats VTR MTR \
-    --campaigns Run3Summer22_to_Run3Summer23BPix \
-    --steps combine_dc limits
+# Workspaces + datacard only (skip limits)
+SKIP_LIMITS=1 bash makeHinvWS/make_ws_and_datacard.sh
+
+# Observed limit
+OBSERVED=1 bash makeHinvWS/make_ws_and_datacard.sh
 ```
 
-Available `--steps`: `derive_nlo`, `param_ws`, `signal_ws`, `datacard`,
-`combine_dc`, `limits` (default: all).
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CATS` | `VTR` | Space-separated list of categories |
+| `VAR` | `Mjj` | Fit variable (`Mjj` or `SignalScore`) |
+| `SKIP_LIMITS` | unset | Set to `1` to stop after Step 4 (datacard) |
+| `OBSERVED` | unset | Set to `1` to run combine on observed data |
+
+`run_pipeline.py` is an alternative Python wrapper that also orchestrates all
+steps, but it still requires CMSSW to be sourced in the calling shell before
+running.
+
+Available `--steps` for `run_pipeline.py`: `derive_nlo`, `param_ws`,
+`signal_ws`, `datacard`, `combine_dc`, `limits` (default: all).
 
 ---
 
 ## Step-by-step manual instructions
 
-### Step 1 — NLO ratio histograms (`derive_run3_nlo_ratios.py`)
+> **Environment note:** Steps 1 & 4 require the pyRAT/LCG environment;
+> Steps 2, 3, 5 & 6 require CMSSW.  If running manually, open two terminals
+> (one per environment) or use `make_ws_and_datacard.sh` to avoid the conflict.
+
+### Step 1 — NLO ratio histograms (`derive_run3_nlo_ratios.py`)  [pyRAT/LCG]
 
 Reads the SR `VBF_shapes.root` and extracts per-bin yield-variation histograms
 for the QCD W and Z processes.  These replace the Run2 `fnlo_SF_*` histograms
@@ -76,6 +93,7 @@ workspace.
 
 ```bash
 cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT
+micromamba deactivate
 source setup_environment.sh
 
 python3 makeHinvWS/derive_run3_nlo_ratios.py \
@@ -95,13 +113,14 @@ The four NLO histograms saved (one per process × four corrections):
 
 ---
 
-### Step 2 — Signal + MC background workspace (`makeSignalAndMCBackgroundWSRun3.C`)
+### Step 2 — Signal + MC background workspace (`makeSignalAndMCBackgroundWSRun3.C`)  [CMSSW]
 
 Packages signal (vbfH, ggH, WH, ZH) and small MC backgrounds (Top, Diboson,
 QCD\_Zll\_NLONew, EWK\_Zll) as `RooDataHist` shapes with all systematic
-variations.  Does **not** require CMSSW.
+variations.
 
 ```bash
+cd /vols/cms/tt1020/Combine/CMSSW_14_1_0_pre4 && cmsenv
 cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT/makeHinvWS
 YEAR="Run3Summer22_to_Run3Summer23BPix"
 
@@ -164,13 +183,16 @@ The parametric workspace builds these nuisance terms on the W/Z SR ratio TF
 
 ---
 
-### Step 4 — Datacard (`make_run3_datacard.py`)
+### Step 4 — Datacard (`make_run3_datacard.py`)  [pyRAT/LCG]
 
 Assembles the Combine datacard, copies workspace files into the datacard
 directory, and reads the number of bins directly from `VBF_shapes.root`.
+Must run in the pyRAT/LCG environment — **do not run this under CMSSW** as the
+LCG and CMSSW library paths are incompatible.
 
 ```bash
 cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT
+micromamba deactivate
 source setup_environment.sh
 
 python3 makeHinvWS/make_run3_datacard.py \
@@ -183,7 +205,7 @@ Output: `datacards/VTR_Run3Summer22_to_Run3Summer23BPix/card_VTR_....txt`
 
 ---
 
-### Step 5 — Combine cards and run limits
+### Step 5 — Combine cards and run limits  [CMSSW]
 
 ```bash
 cd /vols/cms/tt1020/Combine/CMSSW_14_1_0_pre4 && cmsenv
