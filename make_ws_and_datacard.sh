@@ -14,14 +14,16 @@
 # LCG_104 (loaded by setup_environment.sh) and CMSSW are incompatible in the
 # same shell: they conflict on ROOTSYS, LD_LIBRARY_PATH, and PYTHONPATH.
 # Each step therefore runs in a fresh subprocess (via env -i + bash) with only
-# its required environment sourced.  No CMSSW pre-activation is needed.
+# its required environment sourced.  No CMSSW pre-activation is needed. 
 #
 # Usage (from /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT):
 #   bash makeHinvWS/make_ws_and_datacard.sh
 #
 # Optional env vars:
-#   CATS="VTR MTR"    (default: VTR)
-#   VAR="Mjj"         (default: Mjj;  also: SignalScore)
+#   CATS="VTR MTR"                                         (default: VTR)
+#   VAR="Mjj"                                              (default: Mjj;  also: SignalScore)
+#   YEAR="Run3Summer22_to_Run3Summer23BPix"                (default: Run3Summer22_to_Run3Summer23BPix)
+#   CAMPAIGNS="Run3Summer22 Run3Summer22EE Run3Summer23"   (default: all four Run3 campaigns)
 #   SKIP_LIMITS=1     skip Step 6 (just build workspaces + datacard)
 #   OBSERVED=1        run combine on observed data instead of blinded
 # =============================================================================
@@ -32,8 +34,10 @@ set -euo pipefail
 # and `source script.sh VAR=X` invocation styles)
 for _arg in "$@"; do
     case "${_arg}" in
-        CATS=*) CATS="${_arg#CATS=}" ;;
-        VAR=*)  VAR="${_arg#VAR=}"  ;;
+        CATS=*)      CATS="${_arg#CATS=}" ;;
+        VAR=*)       VAR="${_arg#VAR=}" ;;
+        YEAR=*)      YEAR="${_arg#YEAR=}" ;;
+        CAMPAIGNS=*) CAMPAIGNS="${_arg#CAMPAIGNS=}" ;;
         SKIP_LIMITS=*) SKIP_LIMITS="${_arg#SKIP_LIMITS=}" ;;
         OBSERVED=*)    OBSERVED="${_arg#OBSERVED=}" ;;
     esac
@@ -44,8 +48,8 @@ unset _arg
 CATS="${CATS:-VTR}"
 VAR="${VAR:-Mjj}"
 [ "${VAR}" = "SignalScore" ] && CLASSIFIER="true" || CLASSIFIER="false"
-YEAR="Run3Summer22_to_Run3Summer23BPix"
-CAMPAIGNS="Run3Summer22 Run3Summer22EE Run3Summer23 Run3Summer23BPix"
+YEAR="${YEAR:-Run3Summer22_to_Run3Summer23BPix}"
+CAMPAIGNS="${CAMPAIGNS:-Run3Summer22 Run3Summer22EE Run3Summer23 Run3Summer23BPix}"
 
 PYRAT="/vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT"
 MKHWS="${PYRAT}/makeHinvWS"
