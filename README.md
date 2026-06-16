@@ -20,10 +20,13 @@ hinvisible_mtr_vtr/root_files/{year}/{region}_{cat}_VBF/{var}/VBF_shapes.root
 
 | # | Script | What it produces | Environment |
 |---|--------|-----------------|-------------|
+| 1b | `make_run3_jec_uncs.py` | `vbf_shape_jes_uncs_run3.root`, `vbf_jes_jer_tf_uncs_run3.root` — flat Run2-derived JEC uncertainty files for all Run3 years | pyRAT/LCG |
 | 1 | `derive_run3_nlo_ratios.py` | `run3_nlo_sf_{year}_{cat}_{var}.root` — per-bin NLO yield-variation histograms used by the parametric WS | pyRAT/LCG |
 | 2 | `makeSignalAndMCBackgroundWSRun3.C` | `signal_mc_bkgs_ws_{cat}_{year}_VBF{var}.root` — signal + small MC backgrounds as `RooDataHist` | CMSSW |
 | 3 | `makeWS_percategoryRun3.C` | `param_ws_{year}_{cat}_VBF{var}.root` — parametric W/Z transfer-factor workspace | CMSSW |
 | 4 | `make_run3_datacard.py` | `datacards/{cat}_{year}/card_{cat}_{year}.txt` — Combine datacard | pyRAT/LCG |
+
+Step 1b only runs automatically when `JEC_MODE` is `dummy` or `maxdummy` (see below).  It regenerates the JEC uncertainty ROOT files for **all** known Run3 years in one pass so no year's histograms are lost.
 
 Steps 1 & 4 need the pyRAT/LCG_104 environment (`setup_environment.sh`).
 Steps 2, 3, 5 & 6 need CMSSW (`CMSSW_14_1_0_pre4`).
@@ -47,27 +50,50 @@ never coexist in the same shell.
 ```bash
 cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT
 
-# Full pipeline — VTR only, blind expected limit
+# Full pipeline — VTR only, blind expected limit (2022–2023 combined era)
 bash makeHinvWS/make_ws_and_datacard.sh
 
+# 2024 era, SignalScore fit variable
+bash makeHinvWS/make_ws_and_datacard.sh YEAR="RunIII2024Summer24" VAR="SignalScore"
+
 # Both categories
-CATS="VTR MTR" bash makeHinvWS/make_ws_and_datacard.sh
+bash makeHinvWS/make_ws_and_datacard.sh CATS="VTR MTR"
 
 # Workspaces + datacard only (skip limits)
-SKIP_LIMITS=1 bash makeHinvWS/make_ws_and_datacard.sh
+bash makeHinvWS/make_ws_and_datacard.sh SKIP_LIMITS=1
 
 # Observed limit
-OBSERVED=1 bash makeHinvWS/make_ws_and_datacard.sh
+bash makeHinvWS/make_ws_and_datacard.sh OBSERVED=1
+
+# JECs off (fastest, for initial checks)
+bash makeHinvWS/make_ws_and_datacard.sh JEC_MODE="none"
+
+# Use max bin deviation for dummy JECs (more conservative)
+bash makeHinvWS/make_ws_and_datacard.sh JEC_MODE="maxdummy"
 ```
 
 Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CATS` | `VTR` | Space-separated list of categories |
-| `VAR` | `Mjj` | Fit variable (`Mjj` or `SignalScore`) |
-| `SKIP_LIMITS` | unset | Set to `1` to stop after Step 4 (datacard) |
-| `OBSERVED` | unset | Set to `1` to run combine on observed data |
+| `CATS` | `VTR` | Space-separated list of categories to process |
+| `VAR` | `Mjj` | Fit variable: `Mjj` or `SignalScore` |
+| `YEAR` | `Run3Summer22_to_Run3Summer23BPix` | Campaign/era string passed to the C++ scripts and used to name output files |
+| `CAMPAIGNS` | auto-derived from `YEAR` | Space-separated list of pyRAT campaign strings for luminosity sums in the datacard; computed automatically from `YEAR` (e.g. `RunIII2024Summer24` stays as-is; `Run3Summer22_to_Run3Summer23BPix` expands to all four constituent campaigns) |
+| `JEC_MODE` | `dummy` | JEC treatment — see table below |
+| `SKIP_LIMITS` | unset | Set to `1` to stop after Step 4 (datacard only) |
+| `OBSERVED` | unset | Set to `1` to run combine on observed data instead of blinded |
+
+#### `JEC_MODE` values
+
+| Value | Step 1b | Passed to C++ | Description |
+|-------|---------|---------------|-------------|
+| `none` | skipped | `"none"` | All JEC/JER shapes set to nominal (no JEC uncertainty); fastest, suitable for initial checks |
+| `dummy` | runs `make_run3_jec_uncs.py` (mean) | `"dummy"` | Flat Run2-derived uncertainties using the **mean** of \|ratio−1\| across 2017+2018 Mjj bins; **default** |
+| `maxdummy` | runs `make_run3_jec_uncs.py --use_max` (max) | `"dummy"` | Flat Run2-derived uncertainties using the **maximum** bin deviation — more conservative than `dummy` |
+| `real` | skipped | `"real"` | Per-bin shapes read from `vbf_shape_jes_uncs.root`; for use once Run3-native JEC files are available |
+
+When `dummy` or `maxdummy` is selected, Step 1b regenerates both `vbf_shape_jes_uncs_run3.root` and `vbf_jes_jer_tf_uncs_run3.root` for all known Run3 years before the per-category steps begin.
 
 `run_pipeline.py` is an alternative Python wrapper that also orchestrates all
 steps, but it still requires CMSSW to be sourced in the calling shell before
@@ -83,6 +109,42 @@ Available `--steps` for `run_pipeline.py`: `derive_nlo`, `param_ws`,
 > **Environment note:** Steps 1 & 4 require the pyRAT/LCG environment;
 > Steps 2, 3, 5 & 6 require CMSSW.  If running manually, open two terminals
 > (one per environment) or use `make_ws_and_datacard.sh` to avoid the conflict.
+
+### Step 1b — JEC dummy uncertainty files (`make_run3_jec_uncs.py`)  [pyRAT/LCG]
+
+Derives flat Run2-based JEC/JER uncertainty values for all Run3 campaign strings
+and writes them into two ROOT files consumed by Steps 2 and 3.  Only needed when
+`JEC_MODE` is `dummy` or `maxdummy`; `make_ws_and_datacard.sh` runs this
+automatically.
+
+```bash
+cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT
+micromamba deactivate
+source setup_environment.sh
+
+# Mean deviation (default — same as JEC_MODE="dummy")
+python3 makeHinvWS/make_run3_jec_uncs.py \
+    --run2_shape makeHinvWS/vbf_shape_jes_uncs.root \
+    --out_shape  makeHinvWS/vbf_shape_jes_uncs_run3.root \
+    --out_tf     makeHinvWS/vbf_jes_jer_tf_uncs_run3.root
+
+# Max deviation (more conservative — same as JEC_MODE="maxdummy")
+python3 makeHinvWS/make_run3_jec_uncs.py --use_max \
+    --run2_shape makeHinvWS/vbf_shape_jes_uncs.root \
+    --out_shape  makeHinvWS/vbf_shape_jes_uncs_run3.root \
+    --out_tf     makeHinvWS/vbf_jes_jer_tf_uncs_run3.root
+```
+
+The script always writes histograms for **all** known Run3 years
+(`Run3Summer22_to_Run3Summer23BPix` and `RunIII2024Summer24`) into the same
+output file.  Do not pass `--years` with a subset unless you deliberately want to
+drop the other year's histograms.
+
+Outputs:
+- `vbf_shape_jes_uncs_run3.root` — per-process × per-JEC-source single-bin ratio histograms (`{proc}{year}_{src}Up/Down`); 12 sources × 3 processes × 2 directions per year
+- `vbf_jes_jer_tf_uncs_run3.root` — transfer-factor ratio histograms, all set to 1.0 (no residual TF JEC non-cancellation assumed until Run3 JES files are available)
+
+---
 
 ### Step 1 — NLO ratio histograms (`derive_run3_nlo_ratios.py`)  [pyRAT/LCG]
 
@@ -124,18 +186,24 @@ cd /vols/cms/tt1020/Combine/CMSSW_14_1_0_pre4 && cmsenv
 cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT/makeHinvWS
 YEAR="Run3Summer22_to_Run3Summer23BPix"
 
-root -l -b -q "makeSignalAndMCBackgroundWSRun3.C+(\"${YEAR}\",\"VTR\",false,true,true)"
-root -l -b -q "makeSignalAndMCBackgroundWSRun3.C+(\"${YEAR}\",\"MTR\",false,true,true)"
+root -l -b -q "makeSignalAndMCBackgroundWSRun3.C+(\"${YEAR}\",\"VTR\",false,\"dummy\",true)"
+root -l -b -q "makeSignalAndMCBackgroundWSRun3.C+(\"${YEAR}\",\"MTR\",false,\"dummy\",true)"
 ```
 
 Function signature:
 ```
-makeSignalAndMCBackgroundWSRun3(year, cat, classifier, turn_off_jecs, turn_off_btag)
-  classifier    false=Mjj  true=SignalScore
-  turn_off_jecs true  = flat dummy JEC/JER shapes (use until Run3 JES file available)
-                false = read shapes from vbf_shape_jes_uncs.root
+makeSignalAndMCBackgroundWSRun3(year, cat, classifier, jec_mode, turn_off_btag)
+  classifier    false = Mjj fit variable   true = SignalScore fit variable
+  jec_mode      "none"  — all JEC/JER shapes set to nominal (no JEC uncertainty)
+                "dummy" — flat Run2-derived shapes from vbf_shape_jes_uncs_run3.root
+                "real"  — per-bin shapes from vbf_shape_jes_uncs.root (Run2 file;
+                          use once Run3-native JEC files are available)
   turn_off_btag true  = flat dummy b-tag shapes (Run3 b-tag not yet implemented)
 ```
+
+> **Note:** when using `jec_mode="dummy"`, ensure `vbf_shape_jes_uncs_run3.root`
+> contains histograms for the target `year` string (run Step 1b first, or use
+> `make_ws_and_datacard.sh` which does this automatically).
 
 ---
 
@@ -154,15 +222,17 @@ cd /vols/cms/tt1020/Combine/CMSSW_14_1_0_pre4 && cmsenv
 cd /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT/makeHinvWS
 YEAR="Run3Summer22_to_Run3Summer23BPix"
 
-root -l -b -q "makeWS_percategoryRun3.C+(\"${YEAR}\",\"VTR\",false,true,true)"
-root -l -b -q "makeWS_percategoryRun3.C+(\"${YEAR}\",\"MTR\",false,true,true)"
+root -l -b -q "makeWS_percategoryRun3.C+(\"${YEAR}\",\"VTR\",false,\"dummy\",true)"
+root -l -b -q "makeWS_percategoryRun3.C+(\"${YEAR}\",\"MTR\",false,\"dummy\",true)"
 ```
 
 Function signature:
 ```
-makeWS_percategoryRun3(year, cat, classifier, turn_off_jecs, turn_off_btag)
-  turn_off_jecs true  = omit JEC/JER terms from TF formula (use for preliminary fits)
-                false = read TF corrections from vbf_jes_jer_tf_uncs.root
+makeWS_percategoryRun3(year, cat, classifier, jec_mode, turn_off_btag)
+  jec_mode      "none"  — omit JEC/JER terms from the W/Z TF formula entirely
+                "dummy" — read flat Run2-derived TF corrections from
+                          vbf_jes_jer_tf_uncs_run3.root (all values = 1.0 for Run3)
+                "real"  — read per-bin TF corrections from vbf_jes_jer_tf_uncs.root
   turn_off_btag reserved for future use (no effect currently)
 ```
 
@@ -235,7 +305,7 @@ combine -M AsymptoticLimits -d run3_combined.txt -m 125 --run blind -t -1 -n Run
 | EWK correction on strong proc | Per-bin nuisance `wzratioEWK_on_strong[nT][nB]` | Same (fixed to match Run2; was wrongly correlated in original Run3) |
 | muF/muR treatment | W-yield-only ratio (not W/Z ratio) | Same |
 | Lepton veto in W/Z TF | Hardcoded `1/1.01` for e-veto + τ-veto | Histogram-derived (currently flat; activates when pyRAT weights land) |
-| JEC/JER | Always from `vbf_jes_jer_tf_uncs.root` | `turn_off_jecs=true` flag (flat dummies for preliminary) |
+| JEC/JER | Always from `vbf_jes_jer_tf_uncs.root` | `jec_mode` string arg: `"none"` (off) / `"dummy"` (flat Run2-derived, default) / `"maxdummy"` (flat Run2 max) / `"real"` (per-bin shapes) |
 | B-tagging | Full b-tag term | `turn_off_btag=true` (flat dummies) |
 | Trigger SF | Not in workspace | `CMS_Trigger_{cat}_{year}` shape syst (per-event weight from pyRAT) |
 | Prefiring | lnN nuisance | Not applicable in Run3 |

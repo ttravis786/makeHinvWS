@@ -26,8 +26,10 @@
 //   - NLO corrections for WZ ratio TF come from weight_ewk_correction /
 //     weight_qcd_correction / weight_pdf histograms already in the histos array —
 //     no separate histosNLO array needed.
-//   - turn_off_jecs / turn_off_btag flags: when true the corresponding terms are
-//     omitted from the TF formula (preliminary fit mode).
+//   - jec_mode: "none" (TF coefficients hardcoded 1.0), "dummy" (read from
+//               vbf_jes_jer_tf_uncs_run3.root, default), "real" (read from
+//               vbf_jes_jer_tf_uncs.root with actual Run2-derived residuals).
+//   - turn_off_btag: omit b-tag terms (not yet in Run3 files).
 //   - Mjj or SignalScore fit variable.
 
 // ---- process indices — order must match lProcs[] below ----------------------
@@ -64,9 +66,11 @@ double getBinErr(TH1F *h, int b, double fallback = 0.0) {
 int makeWS_percategoryRun3(
     std::string year       = "Run3Summer22_to_Run3Summer23BPix",
     std::string cat        = "VTR",
-    bool classifier        = false,   // false=Mjj  true=SignalScore
-    bool turn_off_jecs     = true,    // omit JEC/JER terms from TF formula
-    bool turn_off_btag     = true     // omit b-tag terms (not yet in Run3 files)
+    bool classifier        = false,    // false=Mjj  true=SignalScore
+    std::string jec_mode   = "dummy",  // "none" : TF coefficients hardcoded 1.0, no file opened
+                                       // "dummy": read from vbf_jes_jer_tf_uncs_run3.root (all 1.0)
+                                       // "real" : read from vbf_jes_jer_tf_uncs.root (actual residuals)
+    bool turn_off_btag     = true      // omit b-tag terms (not yet in Run3 files)
 ) {
     gSystem->Load("libHiggsAnalysisCombinedLimit.so");
 
@@ -209,7 +213,7 @@ int makeWS_percategoryRun3(
         std::cout << "Input [" << iR << "]: " << lInFileName[iR] << std::endl;
     }
 
-    // ---- JES/JER (same scheme as Run2, used only when turn_off_jecs=false) --
+    // ---- JES/JER (same scheme as Run2; TF file read for "dummy" and "real" modes) --
     const unsigned nJ = 11;
     std::string lJes[nJ] = {
         "jesAbsolute",
@@ -227,14 +231,21 @@ int makeWS_percategoryRun3(
 
     // JEC/JER nuisance parameters are always created so the workspace
     // always contains them and the datacard can always reference them.
-    // When turn_off_jecs=true the TF formula coefficients are set to 1.0
-    // (flat dummy — no shape effect), matching makeSignalAndMCBackgroundWSRun3.C.
+    // jec_mode="none": TF coefficients hardcoded 1.0 (no shape effect).
+    // jec_mode="dummy"/"real": coefficients read from the TF file.
     TFile *finputJES = nullptr;
-    if (!turn_off_jecs) {
+    if (jec_mode == "dummy") {
+        finputJES = TFile::Open("vbf_jes_jer_tf_uncs_run3.root");
+        if (!finputJES) {
+            std::cout << "ERROR: vbf_jes_jer_tf_uncs_run3.root not found. "
+                      << "Run make_run3_jec_uncs.py first, or use jec_mode=\"none\"." << std::endl;
+            return 1;
+        }
+    } else if (jec_mode == "real") {
         finputJES = TFile::Open("vbf_jes_jer_tf_uncs.root");
         if (!finputJES) {
             std::cout << "ERROR: vbf_jes_jer_tf_uncs.root not found. "
-                      << "Re-run with turn_off_jecs=true to use flat dummies." << std::endl;
+                      << "Use jec_mode=\"dummy\" or jec_mode=\"none\" instead." << std::endl;
             return 1;
         }
     }
@@ -439,7 +450,7 @@ int makeWS_percategoryRun3(
             unsigned zprocSR = (iT == 0) ? PROCESS::QCDZnunu : PROCESS::EWKZnunu;
             double zSRnom = getBin(histos[0][zprocSR][0], iB);
 
-            lname.str(""); lname << lCategory << lType[iT] << "Z_SR_bin" << iB;
+            lname.str(""); lname << lCategory << lType[iT] << "Z_SR_bin" << iB << "_" << year;
             RooRealVar binParZ(lname.str().c_str(),
                                (lType[iT] + " Z+jets yield in SR per bin").c_str(),
                                zSRnom, 0, 10.*zSRnom);
@@ -457,14 +468,14 @@ int makeWS_percategoryRun3(
                 lname.str(""); lname << lCategory << "ewkqcdratio_stat_bin" << iB;
                 ewkqcdratiostat[iB] = new RooRealVar(lname.str().c_str(), "EWK/QCD ratio stat", 0);
 
-                lname.str(""); lname << lCategory << "TF_EWKQCDSR_bin" << iB;
+                lname.str(""); lname << lCategory << "TF_EWKQCDSR_bin" << iB << "_" << year;
                 std::ostringstream fEWKQCD;
                 fEWKQCD << ewkqcdratio << "*TMath::Power(" << ewkqcdstat << ",@0)";
                 RooFormulaVar TFEWKQCD(lname.str().c_str(), "TF EWK/QCD Z",
                                        fEWKQCD.str().c_str(), RooArgList(*ewkqcdratiostat[iB]));
                 wspace.import(TFEWKQCD, RooFit::RecycleConflictNodes());
 
-                lname.str(""); lname << lCategory << "EWKQCD_SR_bin" << iB;
+                lname.str(""); lname << lCategory << "EWKQCD_SR_bin" << iB << "_" << year;
                 EWKQCDbin = new RooFormulaVar(lname.str().c_str(),
                                               "EWK Z yield from QCD Z per bin",
                                               "@0*@1", RooArgList(TFEWKQCD, binParZ));
@@ -519,7 +530,7 @@ int makeWS_percategoryRun3(
                       << " muf=" << WZratioSyst_muf << " mur=" << WZratioSyst_mur
                       << " pdf=" << WZratioSyst_pdf << " ewk=" << WZratioSyst_ewk << std::endl;
 
-            lname.str(""); lname << lCategory << lType[iT] << "TF_WZSR_bin" << iB;
+            lname.str(""); lname << lCategory << lType[iT] << "TF_WZSR_bin" << iB << "_" << year;
             std::ostringstream fWZ;
             int atIdx = 0;
             fWZ << wzratio;
@@ -535,19 +546,19 @@ int makeWS_percategoryRun3(
                               *wzratioEWK_on_strong[iT][iB]);
 
             {
-                // JER on W/Z ratio — flat dummy (1.0) when turn_off_jecs=true
+                // JER on W/Z ratio — 1.0 when jec_mode="none", otherwise read from TF file
                 double jerWZ = 1.0;
-                if (!turn_off_jecs && finputJES) {
+                if (finputJES != nullptr) {
                     TH1D *h = (TH1D *)finputJES->Get(
                         Form("znunu_over_wlnu_%s_%s_jerUp", lTypeLC[iT].c_str(), year.c_str()));
                     if (h) jerWZ = safeDiv(1., h->GetBinContent(1));
                 }
                 fWZ << "*TMath::Power(" << jerWZ << ",@" << atIdx++ << ")";
                 wzVars.add(*jer);
-                // JES on W/Z ratio — flat dummy (1.0) when turn_off_jecs=true
+                // JES on W/Z ratio — 1.0 when jec_mode="none", otherwise read from TF file
                 for (unsigned iJ = 0; iJ < nJ; ++iJ) {
                     double jesWZ = 1.0;
-                    if (!turn_off_jecs && finputJES) {
+                    if (finputJES != nullptr) {
                         TH1D *h = (TH1D *)finputJES->Get(
                             Form("znunu_over_wlnu_%s_%s_%sUp",
                                  lTypeLC[iT].c_str(), year.c_str(), lJes[iJ].c_str()));
@@ -582,7 +593,7 @@ int makeWS_percategoryRun3(
                                                      fWZ.str().c_str(), wzVars);
             wspace.import(*TFWZ, RooFit::RecycleConflictNodes());
 
-            lname.str(""); lname << lCategory << lType[iT] << "WZ_SR_bin" << iB;
+            lname.str(""); lname << lCategory << lType[iT] << "WZ_SR_bin" << iB << "_" << year;
             RooFormulaVar WZbin(lname.str().c_str(),
                                 (lType[iT] + " W yield in SR per bin").c_str(),
                                 "@0*@1",
@@ -619,16 +630,16 @@ int makeWS_percategoryRun3(
                 lname.str(""); lname << lCategory << lType[iT] << "TF_" << lRegionAlias[iR] << "_stat_bin" << iB;
                 TFstat[iT][iB][iR-1] = new RooRealVar(lname.str().c_str(), "CR/SR stat", 0);
 
-                lname.str(""); lname << lCategory << lType[iT] << "TF_" << lRegionAlias[iR] << "_bin" << iB;
+                lname.str(""); lname << lCategory << lType[iT] << "TF_" << lRegionAlias[iR] << "_bin" << iB << "_" << year;
                 std::ostringstream fCR;
                 atIdx = 0;
                 fCR << tfRatio;
                 RooArgList crVars;
 
                 {
-                    // JER on CR/SR ratio — flat dummy (1.0) when turn_off_jecs=true
+                    // JER on CR/SR ratio — 1.0 when jec_mode="none", otherwise read from TF file
                     double jerCR = 1.0;
-                    if (!turn_off_jecs && finputJES) {
+                    if (finputJES != nullptr) {
                         const char *key = (iR < 3)
                             ? Form("wlnu_over_wmunu_%s_%s_jerUp", lTypeLC[iT].c_str(), year.c_str())
                             : Form("znunu_over_zmumu_%s_%s_jerUp", lTypeLC[iT].c_str(), year.c_str());
@@ -644,10 +655,10 @@ int makeWS_percategoryRun3(
                 crVars.add(*TFstat[iT][iB][iR-1]);
 
                 {
-                    // JES on CR/SR ratio — flat dummy (1.0) when turn_off_jecs=true
+                    // JES on CR/SR ratio — 1.0 when jec_mode="none", otherwise read from TF file
                     for (unsigned iJ = 0; iJ < nJ; ++iJ) {
                         double jesCR = 1.0;
-                        if (!turn_off_jecs && finputJES) {
+                        if (finputJES != nullptr) {
                             const char *key = (iR < 3)
                                 ? Form("wlnu_over_wmunu_%s_%s_%sUp",
                                        lTypeLC[iT].c_str(), year.c_str(), lJes[iJ].c_str())
@@ -664,6 +675,10 @@ int makeWS_percategoryRun3(
                 // Lepton SF terms: compute CR/SR ratio variation per systematic
                 for (unsigned iN = 0; iN < nN; ++iN) {
                     unsigned iSup = 2*iN+1, iSdn = 2*iN+2;
+
+                    // When the nominal TF is zero this CR bin contributes nothing
+                    // (formula = 0*Power(...)*...). No systematic term is needed.
+                    if (tfRatio == 0.0) continue;
 
                     TH1F *hCRup = histos[iR][crProc][iSup];
                     TH1F *hCRdn = histos[iR][crProc][iSdn];
@@ -684,14 +699,14 @@ int makeWS_percategoryRun3(
 
                     double rsUp = hardCodeNuisance[iR][iSup] >= 0
                         ? hardCodeNuisance[iR][iSup]
-                        : 1. + (safeDiv(crUpRaw, srUpRaw) - tfRatio) / tfRatio;
+                        : 1. + safeDiv(safeDiv(crUpRaw, srUpRaw) - tfRatio, tfRatio);
                     double rsDn = hardCodeNuisance[iR][iSdn] >= 0
                         ? hardCodeNuisance[iR][iSdn]
-                        : 1. + (safeDiv(crDnRaw, srDnRaw) - tfRatio) / tfRatio;
+                        : 1. + safeDiv(safeDiv(crDnRaw, srDnRaw) - tfRatio, tfRatio);
 
                     // ---- diagnostic: always print if unusual ----
-                    bool unusual = (rsUp < 0 || rsDn < 0 || tfRatio == 0.0 ||
-                                    crUpRaw < 0 || crDnRaw < 0);
+                    bool unusual = (!std::isfinite(rsUp) || !std::isfinite(rsDn) ||
+                                    rsUp < 0 || rsDn < 0 || crUpRaw < 0 || crDnRaw < 0);
                     if (unusual) {
                         std::cout << "[DIAG] LepSF syst=" << lNuisRun3[iN]
                                   << " " << lType[iT] << "/" << lRegionAlias[iR]
@@ -702,10 +717,18 @@ int makeWS_percategoryRun3(
                                   << "  rsUp=" << rsUp << " rsDn=" << rsDn << std::endl;
                     }
 
-                    if (rsUp < 0 || rsDn < 0) {
-                        std::cout << " ERROR: negative ratiosyst for syst " << lNuisRun3[iN]
-                                  << " bin " << iB << " region " << lRegionAlias[iR] << std::endl;
-                        return 1;
+                    if (!std::isfinite(rsUp) || !std::isfinite(rsDn) || rsUp < 0 || rsDn < 0) {
+                        // Variation is unphysical (negative/non-finite MC yield from NLO weights
+                        // in a near-zero-stats bin). Symmetrize the valid direction.
+                        std::cout << " WARNING: bad ratiosyst for syst " << lNuisRun3[iN]
+                                  << " bin " << iB << " region " << lRegionAlias[iR]
+                                  << " (rsUp=" << rsUp << " rsDn=" << rsDn
+                                  << ") — symmetrizing" << std::endl;
+                        bool upOk = (std::isfinite(rsUp) && rsUp > 0);
+                        bool dnOk = (std::isfinite(rsDn) && rsDn > 0);
+                        if (upOk && !dnOk)       rsDn = safeDiv(1., rsUp);
+                        else if (dnOk && !upOk)  rsUp = safeDiv(1., rsDn);
+                        else { rsUp = 1.0; rsDn = 1.0; }
                     }
 
                     // Skip if effect is negligible (< 0.1%)
@@ -724,7 +747,7 @@ int makeWS_percategoryRun3(
                 RooFormulaVar TF(lname.str().c_str(), "TF CR/SR", fCR.str().c_str(), crVars);
                 wspace.import(TF, RooFit::RecycleConflictNodes());
 
-                lname.str(""); lname << lCategory << lType[iT] << "V_" << lRegionAlias[iR] << "_bin" << iB;
+                lname.str(""); lname << lCategory << lType[iT] << "V_" << lRegionAlias[iR] << "_bin" << iB << "_" << year;
                 // W CRs scale off WZbin; Z CRs scale off Z SR yield
                 RooFormulaVar CRbin(lname.str().c_str(),
                                     (lType[iT] + " V yield in CR per bin").c_str(),
@@ -751,13 +774,13 @@ int makeWS_percategoryRun3(
 
             // Z SR bins
             if (iT == 0) {
-                lname.str(""); lname << lCategory << lType[iT] << "Z_SR_bin" << iB+1;
+                lname.str(""); lname << lCategory << lType[iT] << "Z_SR_bin" << iB+1 << "_" << year;
                 if (!wspace.var(lname.str().c_str())) {
                     std::cout << "ERROR: missing " << lname.str() << std::endl; return 1;
                 }
                 Z_SR_bins[iT].add(*wspace.var(lname.str().c_str()));
             } else {
-                lname.str(""); lname << lCategory << "EWKQCD_SR_bin" << iB+1;
+                lname.str(""); lname << lCategory << "EWKQCD_SR_bin" << iB+1 << "_" << year;
                 if (!wspace.function(lname.str().c_str())) {
                     std::cout << "ERROR: missing " << lname.str() << std::endl; return 1;
                 }
@@ -765,7 +788,7 @@ int makeWS_percategoryRun3(
             }
 
             // W SR bins
-            lname.str(""); lname << lCategory << lType[iT] << "WZ_SR_bin" << iB+1;
+            lname.str(""); lname << lCategory << lType[iT] << "WZ_SR_bin" << iB+1 << "_" << year;
             if (!wspace.function(lname.str().c_str())) {
                 std::cout << "ERROR: missing " << lname.str() << std::endl; return 1;
             }
@@ -773,7 +796,7 @@ int makeWS_percategoryRun3(
 
             // CR bins
             for (unsigned iR = 1; iR < nR; ++iR) {
-                lname.str(""); lname << lCategory << lType[iT] << "V_" << lRegionAlias[iR] << "_bin" << iB+1;
+                lname.str(""); lname << lCategory << lType[iT] << "V_" << lRegionAlias[iR] << "_bin" << iB+1 << "_" << year;
                 if (!wspace.function(lname.str().c_str())) {
                     std::cout << "ERROR: missing " << lname.str() << std::endl; return 1;
                 }

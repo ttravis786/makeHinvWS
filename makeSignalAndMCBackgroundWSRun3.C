@@ -27,8 +27,9 @@
 //   - Updated systematic list and CMS naming.
 //   - Workspace object names use short region aliases (SR/Zee/Zmumu/Wenu/Wmunu) so
 //     existing datacard templates remain compatible.
-//   - turn_off_jecs=true / turn_off_btag=true: add flat dummy shapes (nominal copied
-//     to up and down) as placeholders; set false to provide real shapes.
+//   - jec_mode: "none" (Up=Down=nominal), "dummy" (flat Run2-derived, default),
+//               "real" (per-bin shapes from vbf_shape_jes_uncs.root).
+//   - turn_off_btag=true: flat dummy b-tag shapes; set false when real shapes available.
 
 // Process indices — order must match lProcs[] below.
 enum PROCESS {
@@ -109,9 +110,11 @@ bool importHist(RooWorkspace &wspace, const std::string &name, RooArgList &vars,
 void makeSignalAndMCBackgroundWSRun3(
     std::string year       = "Run3Summer22_to_Run3Summer23BPix",
     std::string cat        = "VTR",
-    bool classifier        = false,  // false=Mjj  true=SignalScore
-    bool turn_off_jecs     = true,   // true: flat dummy JEC/JER shapes; false: read from file
-    bool turn_off_btag     = true    // true: flat dummy b-tag shapes;   false: read from file (TODO)
+    bool classifier        = false,    // false=Mjj  true=SignalScore
+    std::string jec_mode   = "dummy",  // "none" : Up=Down=nominal clone, no effect in fit
+                                       // "dummy": flat Run2-derived shapes from vbf_shape_jes_uncs_run3.root
+                                       // "real" : per-bin shapes from vbf_shape_jes_uncs.root
+    bool turn_off_btag     = true      // true: flat dummy b-tag shapes; false: read from file (TODO)
 ) {
     // ---- variable and output naming -----------------------------------------
     std::string lVarDir    = classifier ? "SignalScore" : "Mjj";
@@ -261,7 +264,7 @@ void makeSignalAndMCBackgroundWSRun3(
         "jesRelativeBal",
         Form("jesRelativeSample_%s", year.c_str())
     };
-    // JES process label: used only when turn_off_jecs=false to look up shapes in external file
+    // JES process label: used for "dummy" and "real" modes to look up shapes in the JEC file
     std::string lJESLabel[nP] = {
         "VBF_HToInvisible_",
         "ZJetsToNuNu",
@@ -274,11 +277,18 @@ void makeSignalAndMCBackgroundWSRun3(
     };
 
     TFile *finputJES = nullptr;
-    if (!turn_off_jecs) {
+    if (jec_mode == "dummy") {
+        finputJES = TFile::Open("vbf_shape_jes_uncs_run3.root");
+        if (!finputJES) {
+            std::cout << "ERROR: vbf_shape_jes_uncs_run3.root not found. "
+                      << "Run make_run3_jec_uncs.py first, or use jec_mode=\"none\"." << std::endl;
+            return;
+        }
+    } else if (jec_mode == "real") {
         finputJES = TFile::Open("vbf_shape_jes_uncs.root");
         if (!finputJES) {
             std::cout << "ERROR: vbf_shape_jes_uncs.root not found. "
-                      << "Re-run with turn_off_jecs=true to use flat dummies." << std::endl;
+                      << "Use jec_mode=\"dummy\" or jec_mode=\"none\" instead." << std::endl;
             return;
         }
     }
@@ -402,10 +412,10 @@ void makeSignalAndMCBackgroundWSRun3(
 
                 TH1F *hJUp = nullptr, *hJDown = nullptr;
 
-                if (turn_off_jecs) {
-                    // Flat dummy.
-                    hJUp   = (TH1F *)Thist->Clone(Form("%s_jecDummy_%s_up",   lProcs[iP].c_str(), lJes[iJ].c_str()));
-                    hJDown = (TH1F *)Thist->Clone(Form("%s_jecDummy_%s_down", lProcs[iP].c_str(), lJes[iJ].c_str()));
+                if (jec_mode == "none") {
+                    // Up = Down = nominal: zero effect in the fit.
+                    hJUp   = (TH1F *)Thist->Clone(Form("%s_jecNone_%s_up",   lProcs[iP].c_str(), lJes[iJ].c_str()));
+                    hJDown = (TH1F *)Thist->Clone(Form("%s_jecNone_%s_down", lProcs[iP].c_str(), lJes[iJ].c_str()));
                 } else {
                     // Read ratio histograms from the JES input file and apply to nominal.
                     finputJES->cd();
@@ -423,14 +433,18 @@ void makeSignalAndMCBackgroundWSRun3(
                         hJUp   = (TH1F *)Thist->Clone();
                         hJDown = (TH1F *)Thist->Clone();
                         for (int b = 1; b <= Thist->GetNbinsX(); ++b) {
-                            double xv = hJUp->GetBinCenter(b);
                             double yv = hJUp->GetBinContent(b);
-                            // Clamp to last valid bin of ratio histogram
-                            if (xv > hRUp->GetBinLowEdge(hRUp->GetNbinsX()))
-                                xv = hRUp->GetBinLowEdge(hRUp->GetNbinsX())
-                                   + 0.5 * hRUp->GetBinWidth(hRUp->GetNbinsX());
-                            hJUp->SetBinContent(b,   yv * hRUp->GetBinContent(hRUp->FindBin(xv)));
-                            hJDown->SetBinContent(b, yv * hRDown->GetBinContent(hRDown->FindBin(xv)));
+                            // Clamp FindBin result to [1, nBinsX] to avoid underflow/overflow
+                            // bins (content=0) for non-Mjj fit variables (e.g. SignalScore [0,1]
+                            // whose bin centres fall below the ratio histogram's Mjj range).
+                            auto clampBin = [](TH1D *h, double x) {
+                                int r = h->FindBin(x);
+                                if (r < 1)            r = 1;
+                                if (r > h->GetNbinsX()) r = h->GetNbinsX();
+                                return r;
+                            };
+                            hJUp->SetBinContent(b,   yv * hRUp->GetBinContent(clampBin(hRUp,   hJUp->GetBinCenter(b))));
+                            hJDown->SetBinContent(b, yv * hRDown->GetBinContent(clampBin(hRDown, hJDown->GetBinCenter(b))));
                         }
                     }
                     hJUp->SetName(Form("%s_%s_up",   wsObjBase.c_str(), lJes[iJ].c_str()));
@@ -439,7 +453,7 @@ void makeSignalAndMCBackgroundWSRun3(
 
                 importHist(wspace, wsObjBase + "_" + jecCMSName + "Up",   vars, hJUp);
                 importHist(wspace, wsObjBase + "_" + jecCMSName + "Down", vars, hJDown);
-                if (!turn_off_jecs)
+                if (jec_mode != "none")
                     makePlot(outPlots, wsObjBase, lJes[iJ], Thist, hJUp, hJDown);
             }
 

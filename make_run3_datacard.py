@@ -16,8 +16,10 @@ Usage (from /vols/cms/tt1020/HiggsInvisible/pyRAT/pyRAT/):
         --var Mjj
 
 Known limitations / TODOs:
-  - JEC and b-tag systematics are flat dummies (workspace produced with turn_off_jecs=True).
-    Update the workspace macros and re-run once real JEC shapes are available.
+  - JEC systematics use flat Run2-derived shapes by default (jec_mode="dummy").
+    Switch to jec_mode="real" once proper Run3 JEC variations are available.
+    Use jec_mode="none" to completely suppress JEC effects (Up=Down=nominal).
+  - b-tag systematics are flat dummies (turn_off_btag=True); update when available.
   - Signal theory lnN values (QCDscale, pdf) are taken from Run2/YR4; update for Run3.
   - No photon CR included (Run2 used an external photon WS from another group).
   - Lumi uncertainty uses preliminary Run3 values.
@@ -27,6 +29,7 @@ import os
 import sys
 import shutil
 import argparse
+import subprocess
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.cms.year_run_utils import CampaignInfoMap  # noqa: E402
@@ -44,6 +47,14 @@ def param_ws_name(cat, year, var):
 
 def signal_ws_name(cat, year, var):
     return f"signal_mc_bkgs_ws_{cat}_{year}_VBF{var}.root"
+
+
+def photon_ws_name(cat, year, var):
+    return f"photon_ws_{year}_{cat}_VBF{var}.root"
+
+
+def photon_card_name(label):
+    return f"photon_card_{label}.txt"
 
 
 def qcd_ws_name(cat, year):
@@ -226,7 +237,7 @@ def shapes_line(dc_proc, bin_label, ws_file_path, ws_obj, ws_syst_obj=None):
 # Datacard writer
 # ---------------------------------------------------------------------------
 
-def write_datacard(args, label, ws_dir, lumi, energy, nB):
+def write_datacard(args, label, ws_dir, lumi, energy, nB, no_hf_noise=False):
     cat, year, var = args.cat, args.year, args.var
     dc_path = os.path.join("datacards", label, f"card_{label}.txt")
     bins_short = ["ZEE", "ZMUMU", "WENU", "WMUNU", "SR"]
@@ -248,6 +259,8 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
     for b_short, b_label in zip(bins_short, bin_labels):
         for p in get_bin_procs(b_short):
             all_bin_proc.append((b_short, b_label, p))
+    if no_hf_noise:
+        all_bin_proc = [(b, bl, p) for b, bl, p in all_bin_proc if p != "HFNoise"]
 
     lines = []
 
@@ -405,8 +418,9 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
         ["1.4" if p == "QCD" else "-" for _, _, p in all_bin_proc]))
 
     # HF noise normalisation (~20%)
-    lines.append(syst_row(f"VBF_NoiseHF_SysError_{label}", "lnN",
-        ["1.2" if p == "HFNoise" else "-" for _, _, p in all_bin_proc]))
+    if not no_hf_noise:
+        lines.append(syst_row(f"VBF_NoiseHF_SysError_{label}", "lnN",
+            ["1.2" if p == "HFNoise" else "-" for _, _, p in all_bin_proc]))
 
     # NOTE: Trigger uncertainty is covered by the CMS_Trigger_<cat>_<year> shape systematic
     # above (from per-event pyRAT weight variations with mild Mjj shape).
@@ -416,9 +430,9 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
     lines.append("-" * 100)
 
     # ---- param / flatParam lines -------------------------------------------
-    # Z SR free bin yields
+    # Z SR free bin yields (year-suffixed to match makeWS_percategoryRun3.C naming)
     for i in range(1, nB + 1):
-        lines.append(f"{cr_pref}QCDZ_SR_bin{i}  flatParam")
+        lines.append(f"{cr_pref}QCDZ_SR_bin{i}_{year}  flatParam")
 
     # WZ ratio theory nuisances correlated across bins (muR, muF, pdf)
     for t in ("QCD", "EWK"):
@@ -446,7 +460,7 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
             for i in range(1, nB + 1):
                 lines.append(f"{cr_pref}{t}TF_{cr_alias}_stat_bin{i}  param  0.0  1")
 
-    # JEC/JER params — always present in workspace (flat dummy 1.0 when turn_off_jecs=True)
+    # JEC/JER params — always present in workspace regardless of jec_mode
     lines.append(f"CMS_res_j_{year}  param  0.0  1")
     for _, cms_jec in list(jec_names.items())[1:]:  # remaining JES (jer already above)
         lines.append(f"{cms_jec}  param  0.0  1")
@@ -462,7 +476,7 @@ def write_datacard(args, label, ws_dir, lumi, energy, nB):
 # File copying
 # ---------------------------------------------------------------------------
 
-def copy_workspace_files(args, label):
+def copy_workspace_files(args, label, no_hf_noise=False):
     cat, year, var = args.cat, args.year, args.var
     ws_dir = os.path.join("datacards", label)
     os.makedirs(ws_dir, exist_ok=True)
@@ -482,11 +496,17 @@ def copy_workspace_files(args, label):
     copy_file(os.path.join(mkhws, param_ws_name(cat, year, var)),  param_ws_name(cat, year, var))
     copy_file(os.path.join(mkhws, signal_ws_name(cat, year, var)), signal_ws_name(cat, year, var))
 
+    # Photon workspace (optional — only copied if it exists)
+    photon_src = os.path.join(mkhws, photon_ws_name(cat, year, var))
+    if os.path.exists(photon_src):
+        copy_file(photon_src, photon_ws_name(cat, year, var))
+
     # QCD DD and HF noise workspaces from root_files/
     region = f"SR_{cat}_VBF"
     rf_dir = os.path.join(PYRAT_ROOT, "hinvisible_mtr_vtr", "root_files", year, region, var)
     copy_file(os.path.join(rf_dir, qcd_ws_name(cat, year)),   qcd_ws_name(cat, year))
-    copy_file(os.path.join(rf_dir, noise_ws_name(cat, year)), noise_ws_name(cat, year))
+    if not no_hf_noise:
+        copy_file(os.path.join(rf_dir, noise_ws_name(cat, year)), noise_ws_name(cat, year))
 
     return ws_dir, issues
 
@@ -520,6 +540,94 @@ def get_nB(cat, year, var):
 
 
 # ---------------------------------------------------------------------------
+# Photon CR datacard
+# ---------------------------------------------------------------------------
+
+def write_photon_datacard(args, label, nB):
+    """Write a standalone photon CR datacard for one category.
+
+    The photon CR adds a single bin ({cat}_photon) whose parametric γ+jets PDFs
+    (QCDG_photon, EWKG_photon) are linked to the same {cat}_QCDZ_SR_bin{N} free
+    parameters as the main VBF card.  After combineCards.py merges the two cards,
+    those shared parameter names are resolved to the same floating yield, so the
+    photon CR data directly constrains the Z→νν SR yield.
+
+    Processes:
+      qcd_gjets  rate 1   — parametric QCD γ+jets (RooParametricHist in photon_ws)
+      ewk_gjets  rate 1   — parametric EWK γ+jets (RooParametricHist in photon_ws)
+      QCDFakeG   rate -1  — fake photon from QCDJets (RooDataHist, normalised by data)
+    """
+    cat, year, var = args.cat, args.year, args.var
+    lcat = f"{cat}_"
+    photon_ws = photon_ws_name(cat, year, var)
+    bin_label = f"{cat}_photon"
+
+    dc_path = os.path.join("datacards", label, photon_card_name(label))
+
+    # Photon-specific CMS nuisance names (not correlated across cat or year)
+    eff_g_name     = f"CMS_eff_g_{cat}_{year}"
+    eff_g_hp_name  = f"CMS_eff_g_highpt_{cat}_{year}"
+    fake_g_name    = f"CMS_fake_g_norm_{year}"
+    trig_g_name    = f"CMS_eff_g_trig_{cat}_{year}"
+
+    lines = []
+    lines.append(f"# Run3 VBF H→invisible — photon CR datacard — {cat}, {year}, {var}")
+    lines.append(f"# Generated by makeHinvWS/make_run3_datacard.py --photon")
+    lines.append("imax 1  number of channels")
+    lines.append("jmax *  number of processes minus 1")
+    lines.append("kmax *  number of nuisance parameters")
+    lines.append("-" * 100)
+
+    # shapes lines — parametric PDFs have no $SYSTEMATIC; QCDFakeG is a plain histogram
+    lines.append(f"shapes qcd_gjets  {bin_label:<30} {photon_ws}  combinedws:QCDG_photon")
+    lines.append(f"shapes ewk_gjets  {bin_label:<30} {photon_ws}  combinedws:EWKG_photon")
+    lines.append(f"shapes QCDFakeG   {bin_label:<30} {photon_ws}  combinedws:QCDFakeG_hist_photon")
+    lines.append(f"shapes data_obs   {bin_label:<30} {photon_ws}  combinedws:data_obs_photon")
+    lines.append("-" * 100)
+
+    lines.append(f"bin          {bin_label}")
+    lines.append("observation  -1")
+    lines.append("-" * 100)
+
+    lines.append(f"bin      {bin_label:<30}  {bin_label:<30}  {bin_label}")
+    lines.append(f"process  {'qcd_gjets':<30}  {'ewk_gjets':<30}  QCDFakeG")
+    lines.append(f"process  {'1':<30}  {'2':<30}  3")
+    lines.append(f"rate     {'1':<30}  {'1':<30}  -1")
+    lines.append("-" * 100)
+
+    lumi_unc = 1.015
+    lines.append(f"{'lumi_13p6TeV_' + year:<45} lnN  {lumi_unc}  {lumi_unc}  -")
+
+    # Photon trigger efficiency — flat lnN (not in TF formula)
+    lines.append(f"{trig_g_name:<45} lnN  1.01  1.01  -")
+
+    # Fake-photon normalisation uncertainty
+    lines.append(f"{fake_g_name:<45} lnN  -     -     1.25")
+
+    lines.append("-" * 100)
+
+    # Free Z SR bin yields — shared with main VBF card (year-suffixed to match makeWS_percategoryRun3.C)
+    for i in range(1, nB + 1):
+        lines.append(f"{lcat}QCDZ_SR_bin{i}_{year}  flatParam")
+
+    # Per-bin γ/Z stat nuisances (photon-CR-specific)
+    for i in range(1, nB + 1):
+        lines.append(f"{lcat}QCDgZratio_stat_bin{i}  param  0.0  1")
+    for i in range(1, nB + 1):
+        lines.append(f"{lcat}EWKgZratio_stat_bin{i}  param  0.0  1")
+
+    # Photon ID shape nuisances (correlated across bins, live in TF formula)
+    lines.append(f"{eff_g_name}  param  0.0  1")
+    lines.append(f"{eff_g_hp_name}  param  0.0  1")
+
+    dc_text = "\n".join(lines) + "\n"
+    with open(dc_path, "w") as f:
+        f.write(dc_text)
+    print(f"Wrote: {dc_path}")
+    return dc_path
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -536,6 +644,13 @@ def main():
                         help="Fit variable")
     parser.add_argument("--label", default=None,
                         help="Datacard directory label (default: {cat}_Run3)")
+    parser.add_argument("--photon", action="store_true", default=False,
+                        help="Also generate a photon CR datacard and combine it with "
+                             "the main card.  Requires photon_ws_*.root built by "
+                             "makePhotonWSRun3.C to already exist in makeHinvWS/.")
+    parser.add_argument("--no-hf-noise", action="store_true", default=False,
+                        help="Exclude the HF noise (QCD_noise) data-driven estimate "
+                             "from the SR process list and datacard systematics.")
     args = parser.parse_args()
 
     # Derive combined year string (matches what the workspace macros use)
@@ -564,15 +679,15 @@ def main():
 
     # Step 1: copy workspace files
     print("Copying workspace files...")
-    ws_dir, issues = copy_workspace_files(args, label)
+    ws_dir, issues = copy_workspace_files(args, label, no_hf_noise=args.no_hf_noise)
 
     if issues:
         print("\nISSUES — the following files were not found:")
         for msg in issues:
             print(f"  {msg}")
         print("\nMake sure you have run:")
-        print(f"  makeSignalAndMCBackgroundWSRun3.C(\"{args.year}\", \"{args.cat}\", false, true, true)")
-        print(f"  makeWS_percategoryRun3.C(\"{args.year}\", \"{args.cat}\", false, true, true)")
+        print(f"  makeSignalAndMCBackgroundWSRun3.C(\"{args.year}\", \"{args.cat}\", false, \"dummy\", true)")
+        print(f"  makeWS_percategoryRun3.C(\"{args.year}\", \"{args.cat}\", false, \"dummy\", true)")
         print(f"  and that plotting has been run to produce the qcdDD/noiseDD workspaces\n")
 
     # Step 2: get number of bins from VBF_shapes.root
@@ -581,9 +696,40 @@ def main():
 
     # Step 3: write datacard
     print("\nWriting datacard...")
-    dc_path = write_datacard(args, label, ws_dir, total_lumi, energy, nB)
+    dc_path = write_datacard(args, label, ws_dir, total_lumi, energy, nB,
+                             no_hf_noise=args.no_hf_noise)
 
     print(f"\nDone. Datacard: {dc_path}")
+
+    if args.photon:
+        photon_ws_src = os.path.join("makeHinvWS", photon_ws_name(args.cat, args.year, args.var))
+        if not os.path.exists(os.path.join("datacards", label, photon_ws_name(args.cat, args.year, args.var))):
+            print(f"\nWARNING: photon workspace not found: {photon_ws_src}")
+            print("  Run makePhotonWSRun3.C first (Step 2b in make_ws_and_datacard.sh PHOTON=1).")
+        else:
+            print("\nGenerating photon CR datacard...")
+            photon_dc_path = write_photon_datacard(args, label, nB)
+
+            # Combine main + photon cards
+            combined_path = os.path.join("datacards", label, f"card_{label}_with_photon.txt")
+            cmd = [
+                "combineCards.py",
+                f"{args.cat}_vbf={dc_path}",
+                f"{args.cat}_photon={photon_dc_path}",
+            ]
+            print(f"\nCombining cards: {' '.join(cmd)}")
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                with open(combined_path, "w") as f:
+                    f.write(result.stdout)
+                print(f"Wrote: {combined_path}")
+                dc_path = combined_path
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                print(f"  NOTE: combineCards.py not available ({e}).")
+                print(f"  Run manually in CMSSW:\n"
+                      f"    combineCards.py {args.cat}_vbf={dc_path} "
+                      f"{args.cat}_photon={photon_dc_path} > {combined_path}")
+
     print("\nTo test with Combine (from CMSSW):")
     print(f"  combine -M AsymptoticLimits -d {dc_path} -m 125 --run blind -t -1")
 
